@@ -1,0 +1,7 @@
+critical_intents:
+  - buy
+  - sell
+  - stake
+allowlist_contracts:
+  - 0xABC123...
+  - 0xDEF456...
