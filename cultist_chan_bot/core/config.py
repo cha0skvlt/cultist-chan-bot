@@ -17,6 +17,10 @@ class Settings(BaseSettings):
     LLM_URL: str = "http://localhost:8000/generate"
     MEMORY_PATH: str = "memory.json"
     LOG_LEVEL: str = "INFO"
+    POSTGRES_HOST: str = "localhost"
+    POSTGRES_USER: str = "postgres"
+    POSTGRES_PASS: str = ""
+    POSTGRES_NAME: str = "postgres"
 
     class Config:
         env_file = ".env"
