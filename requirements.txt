@@ -1,0 +1,10 @@
+pyyaml
+requests
+faiss-cpu
+sentence-transformers
+pydantic
+pydantic-settings
+numpy>=1.21,<1.27
+aiohttp
+pytest-asyncio
+
