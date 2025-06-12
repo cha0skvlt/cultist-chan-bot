@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 from pathlib import Path
-from .logger import get_logger
+from ..core.logger import get_logger
 
 DB_PATH = Path(__file__).with_name("bot.db")
 
