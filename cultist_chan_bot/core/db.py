@@ -1,121 +1,141 @@
-"""Database interactions."""
+"""Async database helpers using asyncpg."""
 
 from __future__ import annotations
 
 import json
-import sqlite3
-from pathlib import Path
 from time import time
 
-from .config import load_config
+import asyncpg
+
+from .config import Settings, load_config
+from .database import create_pool, get_pool
 
 _CFG = load_config()
-DB_PATH = Path(_CFG.DB_PATH)
 
 
-def _get_conn() -> sqlite3.Connection:
-    return sqlite3.connect(DB_PATH)
-
-
-def init_db(db_path: str | None = None) -> None:
-    """Initialize database and create tables if they don't exist."""
-    global DB_PATH
-    DB_PATH = Path(db_path or _CFG.DB_PATH)
-    with _get_conn() as conn:
-        conn.execute(
+async def migrate_pg(settings: Settings | None = None) -> None:
+    """Create tables if they don't exist."""
+    settings = settings or _CFG
+    pool = await create_pool(settings)
+    async with pool.acquire() as conn:
+        await conn.execute(
             """
             CREATE TABLE IF NOT EXISTS airdrop_events (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
+                id SERIAL PRIMARY KEY,
+                user_id BIGINT,
                 drop_name TEXT,
-                timestamp REAL,
+                timestamp DOUBLE PRECISION,
                 status TEXT
             )
             """
         )
-        conn.execute(
+        await conn.execute(
             """
             CREATE TABLE IF NOT EXISTS nft_events (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 nft_name TEXT,
-                user_id INTEGER,
-                timestamp REAL,
+                user_id BIGINT,
+                timestamp DOUBLE PRECISION,
                 action TEXT
             )
             """
         )
-        conn.execute(
+        await conn.execute(
             """
             CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 username TEXT,
-                joined_at REAL
+                joined_at DOUBLE PRECISION
             )
             """
         )
-        conn.execute(
+        await conn.execute(
             """
             CREATE TABLE IF NOT EXISTS airdrops (
                 name TEXT,
                 metadata TEXT,
                 status TEXT,
-                joined_at REAL
+                joined_at DOUBLE PRECISION
             )
             """
         )
-        conn.execute(
+        await conn.execute(
             """
             CREATE TABLE IF NOT EXISTS telemetry (
                 event TEXT,
                 payload TEXT,
                 response TEXT,
-                timestamp REAL
+                timestamp DOUBLE PRECISION
             )
             """
         )
-        conn.execute(
+        await conn.execute(
             """
             CREATE TABLE IF NOT EXISTS nft_purchases (
                 metadata TEXT,
                 status TEXT,
-                timestamp REAL
+                timestamp DOUBLE PRECISION
             )
             """
         )
 
 
-def get_airdrop_history() -> list[tuple[str, str, float]]:
+async def get_airdrop_history() -> list[tuple[str, str, float]]:
     """Return recorded airdrops sorted by time."""
-    with _get_conn() as conn:
-        rows = conn.execute(
+    try:
+        pool = get_pool()
+    except RuntimeError:
+        return
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
             "SELECT name, status, joined_at FROM airdrops ORDER BY joined_at DESC"
-        ).fetchall()
-    return rows
+        )
+    return [(r["name"], r["status"], r["joined_at"]) for r in rows]
 
 
-def log_airdrop(drop: dict, status: str) -> None:
+async def log_airdrop(drop: dict, status: str) -> None:
     """Insert airdrop participation result."""
-    with _get_conn() as conn:
-        conn.execute(
-            "INSERT INTO airdrops (name, metadata, status, joined_at) VALUES (?, ?, ?, ?)",
-            (drop.get("name"), json.dumps(drop), status, time()),
+    try:
+        pool = get_pool()
+    except RuntimeError:
+        return
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "INSERT INTO airdrops (name, metadata, status, joined_at) VALUES ($1, $2, $3, $4)",
+            drop.get("name"),
+            json.dumps(drop),
+            status,
+            time(),
         )
 
 
-def log_telemetry(event: str, payload: dict, response: str) -> None:
+async def log_telemetry(event: str, payload: dict, response: str) -> None:
     """Record persona interaction."""
-    with _get_conn() as conn:
-        conn.execute(
-            "INSERT INTO telemetry (event, payload, response, timestamp) VALUES (?, ?, ?, ?)",
-            (event, json.dumps(payload), response, time()),
+    try:
+        pool = get_pool()
+    except RuntimeError:
+        return
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "INSERT INTO telemetry (event, payload, response, timestamp) VALUES ($1, $2, $3, $4)",
+            event,
+            json.dumps(payload),
+            response,
+            time(),
         )
 
 
-def log_nft_purchase(nft: dict, status: str, timestamp: float) -> None:
+async def log_nft_purchase(nft: dict, status: str, timestamp: float) -> None:
     """Record NFT purchase action."""
-    with _get_conn() as conn:
-        conn.execute(
-            "INSERT INTO nft_purchases (metadata, status, timestamp) VALUES (?, ?, ?)",
-            (json.dumps(nft), status, timestamp),
+    try:
+        pool = get_pool()
+    except RuntimeError:
+        return []
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "INSERT INTO nft_purchases (metadata, status, timestamp) VALUES ($1, $2, $3)",
+            json.dumps(nft),
+            status,
+            timestamp,
         )
 

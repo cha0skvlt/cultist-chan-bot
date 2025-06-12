@@ -10,6 +10,8 @@ from pathlib import Path
 
 from . import db
 
+import aiohttp
+
 from .persona import generate_persona_reply
 from .airdrop_hunter import join_airdrop
 
@@ -29,7 +31,13 @@ if SEEN_USERS_FILE.exists():
 
 
 
-def status(scans: int = 0, purchases: int = 0, donations: float = 0.0, timestamp: float | None = None) -> str:
+async def status(
+    scans: int = 0,
+    purchases: int = 0,
+    donations: float = 0.0,
+    timestamp: float | None = None,
+    session: aiohttp.ClientSession | None = None,
+) -> str:
     """Return persona-formatted status reply."""
 
     context: Dict[str, Any] = {
@@ -38,30 +46,38 @@ def status(scans: int = 0, purchases: int = 0, donations: float = 0.0, timestamp
         "donations": donations,
         "timestamp": timestamp or time(),
     }
-    return generate_persona_reply("status", context)
+    return await generate_persona_reply("status", context, session=session)
 
 
 
 
-def join_airdrop_action(drop: dict) -> str:
+async def join_airdrop_action(
+    drop: dict,
+    session: aiohttp.ClientSession | None = None,
+) -> str:
     """Join an airdrop and return persona-formatted message."""
-    result = join_airdrop(drop)
+    result = await join_airdrop(drop)
     if result.get("success"):
         context = {"name": result.get("name"), "drop": drop}
-        return generate_persona_reply("airdrop_joined", context)
+        return await generate_persona_reply("airdrop_joined", context, session=session)
       
     return ""
 
 
-def airdrops() -> str:
+async def airdrops(
+    session: aiohttp.ClientSession | None = None,
+) -> str:
     """Return persona-formatted airdrop history."""
 
-    history = db.get_airdrop_history()
-    return generate_persona_reply("airdrops_history", {"airdrops": history})
+    history = await db.get_airdrop_history()
+    return await generate_persona_reply("airdrops_history", {"airdrops": history}, session=session)
 
 
 
-def log_stats(user_id: int) -> str:
+async def log_stats(
+    user_id: int,
+    session: aiohttp.ClientSession | None = None,
+) -> str:
     """Return summary stats for admins only."""
     if user_id not in ADMIN_IDS:
 
@@ -78,10 +94,15 @@ def log_stats(user_id: int) -> str:
             "SELECT COUNT(DISTINCT event) FROM telemetry"
         ).fetchone()[0]
     context = {"airdrops": joined, "replies": replies, "events": events}
-    return generate_persona_reply("log_stats_summary", context)
+    return await generate_persona_reply("log_stats_summary", context, session=session)
 
 
-def check_onboarding_message(user_id: int, text: str, username: str | None = None) -> str:
+async def check_onboarding_message(
+    user_id: int,
+    text: str,
+    username: str | None = None,
+    session: aiohttp.ClientSession | None = None,
+) -> str:
     """Return onboarding reply the first time a user sends a message."""
     if text.startswith("/"):
         return ""
@@ -91,4 +112,4 @@ def check_onboarding_message(user_id: int, text: str, username: str | None = Non
     with SEEN_USERS_FILE.open("a") as fh:
         fh.write(f"{user_id}\n")
     context = {"user": username or user_id}
-    return generate_persona_reply("onboarding", context)
+    return await generate_persona_reply("onboarding", context, session=session)

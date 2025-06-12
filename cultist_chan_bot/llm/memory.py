@@ -4,8 +4,12 @@ from __future__ import annotations
 
 from typing import List
 
-import numpy as np
-import faiss
+try:
+    import numpy as np
+    import faiss
+except Exception:  # pragma: no cover - optional dependency errors
+    np = None  # type: ignore
+    faiss = None  # type: ignore
 import json
 from pathlib import Path
 
@@ -15,7 +19,7 @@ except Exception:  # pragma: no cover - optional dependency errors
     SentenceTransformer = None
 
 
-from .config import load_config
+from ..core.config import load_config
 
 _EMBED_DIM = 384
 _MODEL: SentenceTransformer | None = None
@@ -24,7 +28,7 @@ _CFG = load_config()
 _INDEX_PATH = Path(_CFG.MEMORY_PATH)
 _DATA_PATH = _INDEX_PATH.with_suffix(".json")
 
-_INDEX: faiss.IndexFlatIP | None = None
+_INDEX: Any | None = None
 _DATA: List[dict] = []
 
 
@@ -38,6 +42,8 @@ def _get_encoder() -> SentenceTransformer:
 
 
 def _embed(text: str) -> np.ndarray:
+    if np is None:
+        raise RuntimeError("numpy not available")
     model = _get_encoder()
     vec = model.encode([text])[0].astype("float32")
     return np.expand_dims(vec, 0)
@@ -46,6 +52,10 @@ def _embed(text: str) -> np.ndarray:
 def _load_memory() -> None:
     """Load stored vectors from disk."""
     global _INDEX, _DATA
+    if faiss is None:
+        _INDEX = None
+        _DATA = []
+        return
     if _INDEX_PATH.exists():
         try:
             _INDEX = faiss.read_index(str(_INDEX_PATH))
@@ -61,12 +71,16 @@ def _load_memory() -> None:
 
 
 def _persist_memory() -> None:
+    if faiss is None or _INDEX is None:
+        return
     faiss.write_index(_INDEX, str(_INDEX_PATH))
     _DATA_PATH.write_text(json.dumps(_DATA))
 
 
 def save_interaction(user_id: int, message: str, reply: str) -> None:
     """Save conversation pair for user."""
+    if faiss is None or _INDEX is None:
+        return
     vec = _embed(message + " " + reply)
     _INDEX.add(vec)
     _DATA.append({"user_id": user_id, "message": message, "reply": reply})
@@ -75,7 +89,7 @@ def save_interaction(user_id: int, message: str, reply: str) -> None:
 
 def retrieve_context(user_id: int, k: int = 3, query: str | None = None) -> List[dict]:
     """Return similar past interactions."""
-    if not _DATA:
+    if not _DATA or _INDEX is None or faiss is None:
         return []
     if query:
         vec = _embed(query)
